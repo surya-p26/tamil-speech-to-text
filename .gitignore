@@ -1,0 +1,45 @@
+# Python environments and caches
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local model weights (obtain separately)
+models/
+
+# Local audio, generated documents, runtime outputs and database
+# Keep all user/test recordings and generated outputs out of version control.
+data/audio/
+data/*.sqlite
+data/*.sqlite3
+data/*.db
+data/*.db-journal
+data/api_outputs/
+data/api_uploads/
+data/api_processed/
+
+# Secrets and local environment files
+.env
+.env.*
+!.env.example
+
+# Frontend dependencies, builds and caches (works from repository root)
+**/node_modules/
+**/dist/
+**/build/
+**/.vite/
+**/*.tsbuildinfo
+
+# Figma Make generated / platform state not required to run the app
+frontend/.figma/design-context/
+frontend/.plugins/
+frontend/.opencode-skills/
+
+# Logs and OS files
+*.log
+logs/
+Thumbs.db
+.DS_Store

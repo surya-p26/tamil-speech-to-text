@@ -1,0 +1,10 @@
+{
+  "description": "AI-powered Tamil speech-to-text platform enabling government staff to transcribe, edit, and generate official documents with high accuracy and ease.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

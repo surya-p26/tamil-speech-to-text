@@ -1,0 +1,10 @@
+﻿torch
+transformers
+librosa
+soundfile
+python-docx
+docx2pdf
+reportlab
+uharfbuzz
+jiwer
+datasets
