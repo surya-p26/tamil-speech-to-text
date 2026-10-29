@@ -1,0 +1,2 @@
+# Optional Tamil punctuation restoration model; install only if enabling AI punctuation.
+cadence-punctuation

@@ -1,7 +1,9 @@
+
 import os
 import torch
 import librosa
 
+from collections import Counter
 from datasets import load_dataset, Audio
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from jiwer import wer, cer
@@ -11,9 +13,13 @@ from jiwer import wer, cer
 # SETTINGS
 # ==============================
 
-MODEL_PATH = r"models\indicwhisper\tamil\tamil_models\whisper-medium-ta_alldata_multigpu"
+MODEL_PATH = (
+    r"models\indicwhisper\tamil\tamil_models"
+    r"\whisper-medium-ta_alldata_multigpu"
+)
 
-NUM_SAMPLES = 5
+NUM_SAMPLES = 50
+SAMPLE_RATE = 16000
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -60,6 +66,8 @@ else:
         dtype=torch.float16
     ).to(device)
 
+model.eval()
+
 print("Model loaded.")
 
 
@@ -71,6 +79,13 @@ references = []
 predictions = []
 
 sample_number = 0
+
+temp_audio = r"data\audio\temp_kathbath.flac"
+
+os.makedirs(
+    os.path.dirname(temp_audio),
+    exist_ok=True
+)
 
 for sample in ds:
 
@@ -90,12 +105,10 @@ for sample in ds:
     audio_info = sample["audio_filepath"]
     audio_bytes = audio_info["bytes"]
 
-    temp_audio = r"data\audio\temp_kathbath.flac"
-
-    os.makedirs(
-        os.path.dirname(temp_audio),
-        exist_ok=True
-    )
+    if audio_bytes is None:
+        raise ValueError(
+            f"Audio bytes are missing for sample {sample_number}"
+        )
 
     with open(temp_audio, "wb") as f:
         f.write(audio_bytes)
@@ -106,7 +119,7 @@ for sample in ds:
 
     audio, sample_rate = librosa.load(
         temp_audio,
-        sr=16000,
+        sr=SAMPLE_RATE,
         mono=True
     )
 
@@ -116,7 +129,7 @@ for sample in ds:
 
     inputs = processor(
         audio,
-        sampling_rate=16000,
+        sampling_rate=SAMPLE_RATE,
         return_tensors="pt"
     )
 
@@ -129,7 +142,6 @@ for sample in ds:
     print("Transcribing...")
 
     with torch.no_grad():
-
         generated_ids = model.generate(
             input_features,
             language="ta",
@@ -151,57 +163,129 @@ for sample in ds:
     predictions.append(prediction)
 
     # --------------------------
-    # Display
+    # Display transcripts
     # --------------------------
 
-    print("\nGround Truth:")
+    print("\nReference Transcript:")
     print(ground_truth)
 
-    print("\nPrediction:")
+    print("\nIndicWhisper Prediction:")
     print(prediction)
 
-    sample_wer = wer(
-        ground_truth,
-        prediction
+    # --------------------------
+    # Sample WER and CER
+    # --------------------------
+
+    sample_wer = wer(ground_truth, prediction)
+    sample_cer = cer(ground_truth, prediction)
+
+    print(f"\nSample WER: {sample_wer * 100:.2f}%")
+    print(f"Sample CER: {sample_cer * 100:.2f}%")
+
+
+# ==============================
+# VERIFY EVALUATION COUNT
+# ==============================
+
+if not references:
+    raise RuntimeError(
+        "No samples were evaluated. Check the dataset and audio column."
     )
 
-    sample_cer = cer(
-        ground_truth,
-        prediction
+if len(references) < NUM_SAMPLES:
+    print(
+        f"\nWarning: Only {len(references)} samples were evaluated."
     )
 
-    print("\nSample WER:", round(sample_wer * 100, 2), "%")
-    print("Sample CER:", round(sample_cer * 100, 2), "%")
+
+# ==============================
+# OVERALL WER AND CER
+# ==============================
+
+overall_wer = wer(references, predictions)
+overall_cer = cer(references, predictions)
+
+
+# ==============================
+# TOKEN-LEVEL PRECISION, RECALL,
+# AND F1-SCORE
+# ==============================
+
+total_tp = 0
+total_fp = 0
+total_fn = 0
+
+for reference, prediction in zip(references, predictions):
+
+    # Whitespace-separated Tamil tokens
+    ref_tokens = reference.split()
+    pred_tokens = prediction.split()
+
+    ref_counts = Counter(ref_tokens)
+    pred_counts = Counter(pred_tokens)
+
+    # Multiset matching: repeated tokens are counted
+    tp = sum((ref_counts & pred_counts).values())
+    fp = sum((pred_counts - ref_counts).values())
+    fn = sum((ref_counts - pred_counts).values())
+
+    total_tp += tp
+    total_fp += fp
+    total_fn += fn
+
+
+precision = (
+    total_tp / (total_tp + total_fp)
+    if total_tp + total_fp > 0
+    else 0.0
+)
+
+recall = (
+    total_tp / (total_tp + total_fn)
+    if total_tp + total_fn > 0
+    else 0.0
+)
+
+f1_score = (
+    2 * precision * recall / (precision + recall)
+    if precision + recall > 0
+    else 0.0
+)
 
 
 # ==============================
 # FINAL RESULTS
 # ==============================
 
-overall_wer = wer(
-    references,
-    predictions
-)
-
-overall_cer = cer(
-    references,
-    predictions
-)
-
-
 print("\n")
 print("=" * 60)
-print("KATHBATH 5-SAMPLE EVALUATION RESULT")
+print("KATHBATH 5-SAMPLE EVALUATION RESULTS")
 print("=" * 60)
 
-print("\nNumber of samples:", NUM_SAMPLES)
+print(f"\nNumber of samples evaluated: {len(references)}")
 
-print("\nOverall WER:")
-print(round(overall_wer * 100, 2), "%")
+print(f"\nOverall WER: {overall_wer * 100:.2f}%")
+print(f"Overall CER: {overall_cer * 100:.2f}%")
 
-print("\nOverall CER:")
-print(round(overall_cer * 100, 2), "%")
+print("\nToken-Level Metrics")
+print("-" * 40)
+
+print(f"True Positives (TP): {total_tp}")
+print(f"False Positives (FP): {total_fp}")
+print(f"False Negatives (FN): {total_fn}")
+
+print(f"Precision: {precision * 100:.2f}%")
+print(f"Recall: {recall * 100:.2f}%")
+print(f"F1-score: {f1_score * 100:.2f}%")
 
 print("\n" + "=" * 60)
-print("Evaluation completed successfully.")
+print("Evaluation completed.")
 print("=" * 60)
+
+
+# ==============================
+# CLEANUP TEMPORARY AUDIO
+# ==============================
+
+if os.path.exists(temp_audio):
+    os.remove(temp_audio)
