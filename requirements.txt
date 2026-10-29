@@ -10,3 +10,4 @@ jiwer
 datasets
 fastapi
 uvicorn[standard]
+google-auth
