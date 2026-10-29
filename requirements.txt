@@ -8,3 +8,5 @@ reportlab
 uharfbuzz
 jiwer
 datasets
+fastapi
+uvicorn[standard]
