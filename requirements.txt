@@ -11,3 +11,4 @@ datasets
 fastapi
 uvicorn[standard]
 google-auth
+huggingface_hub>=0.34.0,<1.0

@@ -29,6 +29,7 @@ from fastapi.responses import FileResponse
 from document_service import generate_tamil_pdf
 from starlette.concurrency import run_in_threadpool
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from huggingface_hub import snapshot_download
 from pydantic import BaseModel
 from transformers import pipeline
 
@@ -482,14 +483,6 @@ app.add_middleware(
 # MODEL
 # ============================================================
 
-if not MODEL_PATH.exists():
-    raise RuntimeError(
-        "IndicWhisper model not found at:\n"
-        f"{MODEL_PATH}\n\n"
-        "Make sure api.py is placed in the root of your "
-        "C:\\tamil_speech_to_text project."
-    )
-
 print("=" * 60)
 print("Tamil Speech-to-Text API")
 print("=" * 60)
@@ -497,9 +490,52 @@ print("=" * 60)
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 print("Project root:", PROJECT_ROOT)
-print("Model path:", MODEL_PATH)
 print("Device:", device)
-print("\nLoading IndicWhisper...")
+
+# Use the model already present on the local computer.
+# On Render, where the model directory is not included in Git,
+# download the model repository from Hugging Face.
+if MODEL_PATH.is_dir():
+    model_source = str(MODEL_PATH)
+    print("Using local IndicWhisper model:", model_source)
+else:
+    HF_MODEL_REPO = os.getenv(
+        "HF_MODEL_REPO",
+        "surya-26/tamiltranscribe-indicwhisper",
+    ).strip()
+    HF_TOKEN = os.getenv("HF_TOKEN", "").strip() or None
+
+    if not HF_MODEL_REPO:
+        raise RuntimeError(
+            "The local IndicWhisper model directory was not found and "
+            "HF_MODEL_REPO is not configured."
+        )
+
+    print("Local model directory not found:", MODEL_PATH)
+    print("Downloading IndicWhisper from Hugging Face:", HF_MODEL_REPO)
+
+    try:
+        model_source = snapshot_download(
+            repo_id=HF_MODEL_REPO,
+            repo_type="model",
+            token=HF_TOKEN,
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            "Could not download the IndicWhisper model from Hugging Face. "
+            "Check that HF_MODEL_REPO is correct, HF_TOKEN has read access "
+            "if the repository is private, and the model files are available. "
+            f"Original error: {type(exc).__name__}: {exc}"
+        ) from exc
+
+    print("IndicWhisper downloaded to:", model_source)
+
+# Keep MODEL_PATH pointed at the actual model location so that the
+# /system/status endpoint reports the downloaded model correctly.
+MODEL_PATH = Path(model_source)
+
+print("Model path:", MODEL_PATH)
+print("Loading IndicWhisper...")
 
 asr = pipeline(
     "automatic-speech-recognition",
